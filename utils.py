@@ -38,10 +38,10 @@ def save_db(fp:Path, db:DB):
     json.dump(db, fh, indent=2, ensure_ascii=False, default=cvt)
 
 
-def get_qvm(nq:int) -> Tuple[QCloud, List[Qubit], List[CBit]]:
+def get_qvm(nq:int, log:bool=True) -> Tuple[QCloud, List[Qubit], List[CBit]]:
   qvm = QCloud()
   qvm.set_configure(72, 72)
-  qvm.init_qvm(API_KEY, is_logged=True)
+  qvm.init_qvm(API_KEY, is_logged=log)
   qv = qvm.qAlloc_many(nq)
   cv = qvm.cAlloc_many(nq)
   return qvm, qv, cv
@@ -59,3 +59,17 @@ def run_prog(name:str, qvm:QCloud, prog:QProg, optimize:bool=True):
       'res': locals().get('res', None),
     })
     save_db(log_fp, db)
+
+
+def get_qvm_sim(nq:int) -> Tuple[CPUQVM, List[Qubit], List[CBit]]:
+  qvm = CPUQVM()
+  qvm.init_qvm()
+  qv = qvm.qAlloc_many(nq)
+  cv = qvm.cAlloc_many(nq)
+  return qvm, qv, cv
+
+def run_prog_sim(qvm:CPUQVM, prog:QProg, shot:int=1000):
+  res = qvm.run_with_configuration(prog, shot=shot)
+  res = {k: v / sum(list(res.values())) for k, v in res.items()}
+  print(res)
+  return res
