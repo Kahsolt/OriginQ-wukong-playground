@@ -68,8 +68,8 @@ def get_qvm_sim(nq:int) -> Tuple[CPUQVM, List[Qubit], List[CBit]]:
   cv = qvm.cAlloc_many(nq)
   return qvm, qv, cv
 
-def run_prog_sim(qvm:CPUQVM, prog:QProg, shot:int=1000):
+def run_prog_sim(qvm:CPUQVM, prog:QProg, shot:int=1000, log:bool=True):
   res = qvm.run_with_configuration(prog, shot=shot)
   res = {k: v / sum(list(res.values())) for k, v in res.items()}
-  print(res)
+  if log: print(res)
   return res
