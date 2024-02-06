@@ -81,49 +81,42 @@ def get_basis_encoder(qv:List[Qubit], x:List[float]) -> QCircuit:
   encoder.basic_encode(qv, x)
   return encoder.get_circuit()
 
+def get_angle_encoder(qv:List[Qubit], x:List[float]) -> QCircuit:
+  encoder = Encode()
+  encoder.angle_encode(qv, x)
+  return encoder.get_circuit()
+
 def get_amplitude_encoder(qv:List[Qubit], x:List[float]) -> QCircuit:
   encoder = Encode()
   encoder.amplitude_encode(qv, x)
   return encoder.get_circuit()
 
 # Hardware-Efficient Ansatz (RX-RY + CNOT)
-def get_HAE(qv:List[Qubit], params:List[float]) -> QCircuit:
-  return QCircuit() \
-    << RX(qv[0], params[0]) \
-    << RY(qv[0], params[1]) \
-    << RX(qv[1], params[2]) \
-    << RY(qv[1], params[3]) \
-    << RX(qv[2], params[4]) \
-    << RY(qv[2], params[5]) \
-    << CNOT(qv[0], qv[1]) \
-    << CNOT(qv[1], qv[2]) \
-    << RX(qv[0], params[6]) \
-    << RY(qv[0], params[7]) \
-    << RX(qv[1], params[8]) \
-    << RY(qv[1], params[9]) \
-    << RX(qv[2], params[10]) \
-    << RY(qv[2], params[11]) \
-    << CNOT(qv[0], qv[1]) \
-    << CNOT(qv[1], qv[2]) \
-    << RX(qv[0], params[12]) \
-    << RY(qv[0], params[13]) \
-    << RX(qv[1], params[14]) \
-    << RY(qv[1], params[15]) \
-    << RX(qv[2], params[16]) \
-    << RY(qv[2], params[17])
+def get_HAE(qv:List[Qubit], params:List[float], n_rep:int=3) -> QCircuit:
+  nq = len(qv)
+  vqc = QCircuit()
+  p = 0
+  for r in range(n_rep):
+    for q in range(nq):
+      vqc << RX(qv[q], params[p]) ; p += 1
+      vqc << RY(qv[q], params[p]) ; p += 1
+    if r < n_rep - 1:
+      for q in range(nq - 1):
+        vqc << CNOT(qv[q], qv[q+1])
+  return vqc
 
 
-def train(dataset:List, get_circuit:Callable, maxiter=100, shot:int=3000) -> List[float]:
+def train(dataset:List, get_circuit:Callable, nq:int=3, maxiter=100, shot:int=3000) -> List[float]:
   def func(params:np.ndarray) -> float:
     nonlocal n_iter
     n_iter += 1
 
     losses = []
     for X, Y in dataset:
-      qvm, qv, cv = get_qvm_sim(3)
+      qvm, qv, cv = get_qvm_sim(nq)
       prog = get_circuit(qv, cv, X, params)
       res = run_prog_sim(qvm, prog, shot=shot, log=False)
-      probs = np.asarray([res.get(k, 0) for k in [bin(i)[2:].rjust(3, '0') for i in range(len(dataset))]])
+      probs = np.asarray([res.get(k, 0) for k in [bin(i)[2:].rjust(nq, '0') for i in range(nq**2)]])
       loss = ((probs - Y) ** 2).mean()
       losses.append(loss)
     loss_avg = sum(losses) / len(losses)
@@ -132,27 +125,27 @@ def train(dataset:List, get_circuit:Callable, maxiter=100, shot:int=3000) -> Lis
     return loss_avg
 
   n_iter = 0
-  params = np.random.uniform(low=-pi/32, high=pi/32, size=[18])
+  params = np.random.uniform(low=-pi/32, high=pi/32, size=[nq*6])
   res = minimize(func, params, method='COBYLA', tol=1e-8, bounds=Bounds(-pi, pi), options={'maxiter': maxiter, 'disp': True})
   print('best f(x):', res.fun)
   print('best x:', res.x)
   return res.x
 
-def infer(dataset:List, get_circuit:Callable, params:List[float], name:str, shot:int=1000, use_real:bool=False):
+def infer(dataset:List, get_circuit:Callable, params:List[float], name:str, nq:int=3, shot:int=1000, use_real:bool=False):
   log_fp = LOG_PATH / (name + '.json')
   db = load_db(log_fp)
   try:
     if use_real:
-      qvm, qv, cv = get_qvm(3)
+      qvm, qv, cv = get_qvm(nq)
     else:
-      qvm, qv, cv = get_qvm_sim(3)
+      qvm, qv, cv = get_qvm_sim(nq)
     for X, Y in dataset:
       prog = get_circuit(qv, cv, X, params)
       if use_real:
         res = qvm.real_chip_measure(prog, shot, real_chip_type.origin_72, is_amend=False, is_mapping=False, is_optimization=False)
       else:
         res = run_prog_sim(qvm, prog, shot=shot)
-      probs = np.asarray([res.get(k, 0) for k in [bin(i)[2:].rjust(3, '0') for i in range(len(dataset))]])
+      probs = np.asarray([res.get(k, 0) for k in [bin(i)[2:].rjust(nq, '0') for i in range(nq**2)]])
       print(probs)
       db.append({
         'X': X,
@@ -164,3 +157,39 @@ def infer(dataset:List, get_circuit:Callable, params:List[float], name:str, shot
     print_exc()
   finally:
     save_db(log_fp, db)
+
+def infer_clf(dataset:List, get_circuit:Callable, params:List[float], name:str, nq:int=3, shot:int=1000, use_real:bool=False):
+  log_fp = LOG_PATH / (name + '.json')
+  db = load_db(log_fp)
+  tot, ok = 0, 0
+  try:
+    if use_real:
+      qvm, qv, cv = get_qvm(nq)
+    else:
+      qvm, qv, cv = get_qvm_sim(nq)
+    for X, Y in dataset:
+      prog = get_circuit(qv, cv, X, params)
+      if use_real:
+        res = qvm.real_chip_measure(prog, shot, real_chip_type.origin_72, is_amend=False, is_mapping=False, is_optimization=False)
+      else:
+        res = run_prog_sim(qvm, prog, shot=shot)
+      probs = np.asarray([res.get(k, 0) for k in [bin(i)[2:].rjust(nq, '0') for i in range(nq**2)]])
+      db.append({
+        'X': X,
+        'res': dict(res),
+        'probs': list(probs),
+      })
+      save_db(log_fp, db)
+
+      truth = np.argmax(Y)
+      pred = np.argmax(probs)
+      print(f'>> truth: {truth}, pred: {pred}')
+      if pred == truth: ok += 1
+      tot += 1
+      print(f'Acc:  {ok} / {tot} = {ok / tot:.3%}')
+  except:
+    print_exc()
+  finally:
+    save_db(log_fp, db)
+
+  print(f'Acc:  {ok} / {tot} = {ok / tot:.3%}')
