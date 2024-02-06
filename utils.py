@@ -12,7 +12,7 @@ import numpy as np
 from numpy import pi
 from pyqpanda import CPUQVM, QCloud, real_chip_type
 from pyqpanda import QProg, Qubit, ClassicalCondition as CBit
-from pyqpanda import H, I, X, Y, Z, RX, RY, RZ, CNOT, SWAP, Measure, measure_all
+from pyqpanda import H, I, X, Y, Z, RX, RY, RZ, CR, CNOT, SWAP, Measure, measure_all
 from pyqpanda import Encode
 
 np.random.seed(114514)
